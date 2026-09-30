@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="ko" class="h-full bg-slate-900 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV 위치 데이터 지도 시각화 도구</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0284c7',
+                            600: '#0369a1',
+                            700: '#075985',
+                            900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- FontAwesome Icons (cdnjs) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+    <!-- Leaflet Map CSS & JS (cdnjs) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+
+    <!-- Leaflet MarkerCluster CSS & JS (cdnjs) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+
+    <!-- PapaParse CSV Parser (cdnjs) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <style>
+        /* Custom scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+
+        /* Leaflet popup customization */
+        .leaflet-popup-content-wrapper {
+            background: #1e293b;
+            color: #f8fafc;
+            border-radius: 0.75rem;
+            padding: 4px;
+            border: 1px solid #334155;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);
+        }
+        .leaflet-popup-tip {
+            background: #1e293b;
+        }
+        
+        /* Custom map pin styling */
+        .custom-pin {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            background: #0284c7;
+            color: white;
+            border-radius: 50% 50% 50% 0;
+            transform: rotate(-45deg);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            border: 2px solid #ffffff;
+            transition: transform 0.2s ease;
+        }
+        .custom-pin:hover {
+            transform: rotate(-45deg) scale(1.18);
+        }
+        .custom-pin i {
+            transform: rotate(45deg);
+            font-size: 14px;
+        }
+
+        /* Marker cluster customization */
+        .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large {
+            background-color: rgba(14, 165, 233, 0.4) !important;
+        }
+        .marker-cluster-small div, .marker-cluster-medium div, .marker-cluster-large div {
+            background-color: #0284c7 !important;
+            color: white !important;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col font-sans overflow-hidden antialiased select-none">
+
+    <!-- Top Navigation Bar -->
+    <header class="bg-slate-800 border-b border-slate-700 px-4 py-3 flex-none z-20 shadow-md">
+        <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-sky-500/20 text-sky-400 rounded-lg border border-sky-500/30">
+                    <i class="fa-solid fa-map-location-dot text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                        GeoCSV 위치 데이터 시각화
+                        <span class="text-[10px] sm:text-xs font-normal bg-sky-900/60 text-sky-300 border border-sky-700/50 px-2 py-0.5 rounded-full">Pure HTML/JS</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">CSV 파일의 위도/경도를 감지하여 지도 상에 시각화합니다</p>
+                </div>
+            </div>
+
+            <!-- Header Action Buttons -->
+            <div class="flex items-center gap-2 flex-wrap">
+                <button id="loadSampleBtn" class="px-3 py-1.5 text-xs font-medium bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-500/40 rounded-lg transition-all flex items-center gap-1.5 shadow-sm active:scale-95">
+                    <i class="fa-solid fa-solar-panel text-amber-400"></i>
+                    <span>예시 데이터 로드 (한국남부발전)</span>
+                </button>
+                <label for="csvFileInput" class="px-3 py-1.5 text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white rounded-lg cursor-pointer transition-all flex items-center gap-1.5 shadow-sm active:scale-95">
+                    <i class="fa-solid fa-file-csv"></i>
+                    <span>CSV 파일 선택</span>
+                    <input type="file" id="csvFileInput" accept=".csv, .txt" class="hidden">
+                </label>
+                <button id="toggleSidebarBtn" class="p-1.5 text-slate-300 hover:bg-slate-700 rounded-lg lg:hidden" title="사이드바 토글">
+                    <i class="fa-solid fa-bars text-lg"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex overflow-hidden relative">
+
+        <!-- Left Sidebar Panel -->
+        <aside id="sidebar" class="w-full lg:w-96 bg-slate-800 border-r border-slate-700 flex flex-col z-10 transition-all duration-300 absolute lg:relative inset-y-0 left-0 -translate-x-full lg:translate-x-0 shadow-2xl lg:shadow-none">
+            
+            <!-- File Drag and Drop Dropzone -->
+            <div class="p-4 border-b border-slate-700/80 bg-slate-800/80">
+                <div id="dropZone" class="border-2 border-dashed border-slate-600 hover:border-sky-500 bg-slate-900/50 rounded-xl p-4 text-center cursor-pointer transition-colors group">
+                    <i class="fa-solid fa-cloud-arrow-up text-2xl text-slate-400 group-hover:text-sky-400 mb-1 transition-colors"></i>
+                    <p class="text-xs font-medium text-slate-300">CSV 파일을 이곳에 드래그하거나 클릭</p>
+                    <p class="text-[10px] text-slate-500 mt-1">UTF-8 / EUC-KR / CP949 자동 감지 지원</p>
+                </div>
+            </div>
+
+            <!-- Column Mapping Controls Panel -->
+            <div id="mappingPanel" class="p-4 border-b border-slate-700 bg-slate-800/50 space-y-3">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <i class="fa-solid fa-sliders text-sky-400"></i> 좌표 컬럼 매핑
+                    </h2>
+                    <span id="detectedBadge" class="hidden text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full">자동 감지 완료</span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1">위도 (Latitude)</label>
+                        <select id="latSelect" class="w-full bg-slate-900 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 focus:outline-none focus:border-sky-500">
+                            <option value="">-- 선택 --</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1">경도 (Longitude)</label>
+                        <select id="lngSelect" class="w-full bg-slate-900 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 focus:outline-none focus:border-sky-500">
+                            <option value="">-- 선택 --</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1">라벨/명칭 컬럼</label>
+                        <select id="titleSelect" class="w-full bg-slate-900 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 focus:outline-none focus:border-sky-500">
+                            <option value="">-- 없음 --</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1">마커 클러스터링</label>
+                        <select id="clusterToggle" class="w-full bg-slate-900 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 focus:outline-none focus:border-sky-500">
+                            <option value="true">그룹화 (추천)</option>
+                            <option value="false">개별 표시</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary Stats Counter -->
+            <div class="p-3 bg-slate-900/60 border-b border-slate-700 flex items-center justify-between text-xs">
+                <div class="flex items-center gap-1.5">
+                    <span class="text-slate-400">전체 행:</span>
+                    <span id="totalCount" class="font-bold text-sky-400">0</span>
+                    <span class="text-slate-400">건</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-slate-400">지도 표시:</span>
+                    <span id="validCount" class="font-bold text-emerald-400">0</span>
+                    <span class="text-slate-400">개</span>
+                </div>
+            </div>
+
+            <!-- Search Filter Field -->
+            <div class="p-3 border-b border-slate-700">
+                <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-500 text-xs"></i>
+                    <input type="text" id="searchInput" placeholder="데이터 검색 (발전소명, 주소 등)..." class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
+                </div>
+            </div>
+
+            <!-- Scrollable Location Items List -->
+            <div class="flex-1 overflow-y-auto p-2 space-y-2 select-text" id="locationList">
+                <div class="p-8 text-center text-slate-500 text-xs flex flex-col items-center justify-center h-full">
+                    <i class="fa-regular fa-folder-open text-3xl mb-2 text-slate-600"></i>
+                    <p>CSV 파일을 업로드하거나 예시 데이터를 불러와보세요.</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Right Leaflet Map View -->
+        <main class="flex-1 relative h-full w-full bg-slate-950">
+            <div id="map" class="w-full h-full z-0"></div>
+
+            <!-- Tile Layer Style Switcher Buttons -->
+            <div class="absolute top-4 right-4 z-10 bg-slate-800/90 backdrop-blur border border-slate-700 rounded-lg p-1.5 shadow-lg flex items-center gap-1 text-xs">
+                <span class="text-slate-400 font-medium px-1.5 hidden sm:inline">지도 스타일:</span>
+                <button data-tile="street" class="tile-btn active px-2.5 py-1 rounded bg-sky-600 text-white transition-all text-xs">일반 (Esri)</button>
+                <button data-tile="hot" class="tile-btn px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 transition-all text-xs">OSM (HOT)</button>
+                <button data-tile="topo" class="tile-btn px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 transition-all text-xs">지형도</button>
+                <button data-tile="satellite" class="tile-btn px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 transition-all text-xs">위성</button>
+            </div>
+
+            <!-- Map Bottom Status Info Overlay -->
+            <div id="mapStatusOverlay" class="hidden absolute bottom-6 right-4 z-10 bg-slate-900/90 backdrop-blur border border-slate-700 px-3 py-2 rounded-lg text-xs text-slate-300 shadow-xl flex items-center gap-3">
+                <div class="flex items-center gap-1.5">
+                    <span class="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
+                    <span>정상 좌표</span>
+                </div>
+                <div id="invalidBadge" class="hidden flex items-center gap-1.5 text-rose-400">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span id="invalidCount">0</span>개 좌표 누락/오류
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- UI Toast Notification Box -->
+    <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none bg-slate-800 text-white px-4 py-2.5 rounded-lg border border-slate-700 shadow-2xl flex items-center gap-2 text-xs">
+        <i id="toastIcon" class="fa-solid fa-circle-info text-sky-400 text-base"></i>
+        <span id="toastMessage">알림 메시지</span>
+    </div>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        // Sample dataset representing 한국남부발전(주) 태양광발전소 위치 정보
+        const SAMPLE_KOSPO_CSV = `발전소명,설비용량(kW),위도,경도,소재지도로명주소,운전개시일자
+부산천연가스 태양광,1000,35.0805,128.9831,부산광역시 사하구 감천항로 45,2007-06-25
+신인천복합 태양광1단계,1200,37.5302,126.6025,인천광역시 서구 장도로 130,2009-12-30
+삼척빛드림 태양광,10000,37.3888,129.2312,강원특별자치도 삼척시 수원길 115,2014-06-12
+하동빛드림 태양광1호,3000,34.9785,127.7812,경상남도 하동군 금성면 산업단지호 80,2011-09-15
+영월빛드림 태양광,38000,37.1524,128.4691,강원특별자치도 영월군 남면 태양광발전로 100,2013-12-20
+신인천 태양광2단계,2500,37.5310,126.6040,인천광역시 서구 장도로 130,2018-05-10
+부산 신항 태양광,1500,35.0741,128.8252,부산광역시 강서구 신항남로 12,2016-11-04
+남제주빛드림 태양광,800,33.2381,126.3090,제주특별자치도 서귀포시 안덕면 화순해안로 15,2017-03-22
+하동 수상태양광,1000,34.9812,127.7845,경상남도 하동군 금성면 평사리 수면,2019-08-30
+부산 지붕태양광 1호,500,35.1500,128.9900,부산광역시 사하구 신평동 102,2020-04-15
+삼척 2단계 태양광,5000,37.3910,129.2350,강원특별자치도 삼척시 원덕읍 삼척로 42,2021-01-10
+세종 누리 태양광,2000,36.4800,127.2890,세종특별자치시 누리동 산 12,2022-09-01
+신세종 복합 태양광,1500,36.5011,127.2514,세종특별자치시 연기면 태산로 45,2023-03-15`;
+
+        // State management
+        let rawCsvData = [];
+        let csvHeaders = [];
+        let map = null;
+        let clusterGroup = null;
+        let layerGroup = null;
+        let markersList = [];
+
+        // API 키 없이 안정적으로 사용 가능한 타일 레이어 (403 차단 및 확대 오류 방지 설정 적용)
+        const tileLayers = {
+            street: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19,
+                maxNativeZoom: 17,
+                attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS'
+            }),
+            hot: L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                maxNativeZoom: 19,
+                subdomains: 'abc',
+                attribution: '&copy; OpenStreetMap contributors, Tiles style by HOT'
+            }),
+            topo: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19,
+                maxNativeZoom: 17,
+                attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom'
+            }),
+            satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19,
+                maxNativeZoom: 18,
+                attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS'
+            })
+        };
+
+        let activeTile = tileLayers.street;
+
+        // Initialize Application on Page Load
+        window.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            setupEventListeners();
+            
+            // Preload example dataset for instant visualization
+            loadCsvText(SAMPLE_KOSPO_CSV, '한국남부발전_태양광발전소_위치정보_예시.csv');
+        });
+
+        // Initialize Map
+        function initMap() {
+            try {
+                map = L.map('map', {
+                    center: [36.2, 127.8], // Default center point for Korea
+                    zoom: 7,
+                    layers: [activeTile],
+                    zoomControl: false
+                });
+
+                // Zoom controls position
+                L.control.zoom({ position: 'topleft' }).addTo(map);
+
+                // Layer groups
+                clusterGroup = L.markerClusterGroup({
+                    chunkedLoading: true,
+                    maxClusterRadius: 40
+                });
+                layerGroup = L.layerGroup();
+
+                map.addLayer(clusterGroup);
+            } catch (err) {
+                console.error('Map initialization error:', err);
+                showToast('지도 생성 중 오류가 발생했습니다.', 'error');
+            }
+        }
+
+        // Event Listeners Registration
+        function setupEventListeners() {
+            const csvInput = document.getElementById('csvFileInput');
+            const dropZone = document.getElementById('dropZone');
+            const loadSampleBtn = document.getElementById('loadSampleBtn');
+            const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
+            const sidebar = document.getElementById('sidebar');
+
+            // File select
+            csvInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) handleFile(file);
+            });
+
+            // Drag and Drop events
+            dropZone.addEventListener('click', () => csvInput.click());
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-sky-400', 'bg-slate-800');
+            });
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('border-sky-400', 'bg-slate-800');
+            });
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-sky-400', 'bg-slate-800');
+                if (e.dataTransfer.files.length > 0) {
+                    handleFile(e.dataTransfer.files[0]);
+                }
+            });
+
+            // Load sample data button
+            loadSampleBtn.addEventListener('click', () => {
+                loadCsvText(SAMPLE_KOSPO_CSV, '한국남부발전_태양광발전소_위치정보_예시.csv');
+                showToast('한국남부발전 태양광 발전소 예시 데이터를 로드했습니다.', 'success');
+            });
+
+            // Column selects change handlers
+            document.getElementById('latSelect').addEventListener('change', renderMarkers);
+            document.getElementById('lngSelect').addEventListener('change', renderMarkers);
+            document.getElementById('titleSelect').addEventListener('change', renderMarkers);
+            document.getElementById('clusterToggle').addEventListener('change', renderMarkers);
+
+            // Search filter handler
+            document.getElementById('searchInput').addEventListener('input', (e) => {
+                filterListAndMap(e.target.value);
+            });
+
+            // Tile Switchers
+            document.querySelectorAll('.tile-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.tile-btn').forEach(b => {
+                        b.classList.remove('bg-sky-600', 'text-white', 'active');
+                        b.classList.add('bg-slate-700', 'text-slate-200');
+                    });
+                    const targetBtn = e.currentTarget;
+                    targetBtn.classList.remove('bg-slate-700', 'text-slate-200');
+                    targetBtn.classList.add('bg-sky-600', 'text-white', 'active');
+
+                    const tileKey = targetBtn.getAttribute('data-tile');
+                    if (tileLayers[tileKey]) {
+                        map.removeLayer(activeTile);
+                        activeTile = tileLayers[tileKey];
+                        map.addLayer(activeTile);
+                    }
+                });
+            });
+
+            // Mobile sidebar toggle
+            toggleSidebarBtn.addEventListener('click', () => {
+                sidebar.classList.toggle('-translate-x-full');
+            });
+        }
+
+        // Read CSV File with automatic encoding fallback (UTF-8 -> EUC-KR / CP949)
+        function handleFile(file) {
+            showToast(`'${file.name}' 파일을 읽는 중입니다...`, 'info');
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                // If contains replacement character '\ufffd', retry reading as EUC-KR (standard for Korean public data portals)
+                if (text.includes('\ufffd')) {
+                    const eucKrReader = new FileReader();
+                    eucKrReader.onload = function(evt) {
+                        loadCsvText(evt.target.result, file.name);
+                    };
+                    eucKrReader.readAsText(file, 'EUC-KR');
+                } else {
+                    loadCsvText(text, file.name);
+                }
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+
+        // Parse CSV text string using PapaParse
+        function loadCsvText(csvContent, filename) {
+            Papa.parse(csvContent, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    if (!results.data || results.data.length === 0) {
+                        showToast('CSV 파일에 유효한 데이터가 없습니다.', 'error');
+                        return;
+                    }
+
+                    rawCsvData = results.data;
+                    csvHeaders = results.meta.fields || Object.keys(rawCsvData[0]);
+
+                    populateSelects();
+                    autoDetectColumns();
+                    renderMarkers();
+                    showToast(`'${filename}' (${rawCsvData.length}건) 로드 완료`, 'success');
+                },
+                error: function(err) {
+                    showToast('CSV 파싱 중 오류가 발생했습니다: ' + err.message, 'error');
+                }
+            });
+        }
+
+        // Populate select dropdown options
+        function populateSelects() {
+            const latSelect = document.getElementById('latSelect');
+            const lngSelect = document.getElementById('lngSelect');
+            const titleSelect = document.getElementById('titleSelect');
+
+            latSelect.innerHTML = '<option value="">-- 선택 --</option>';
+            lngSelect.innerHTML = '<option value="">-- 선택 --</option>';
+            titleSelect.innerHTML = '<option value="">-- 없음 --</option>';
+
+            csvHeaders.forEach(header => {
+                const opt1 = document.createElement('option');
+                opt1.value = header;
+                opt1.textContent = header;
+                latSelect.appendChild(opt1);
+
+                const opt2 = document.createElement('option');
+                opt2.value = header;
+                opt2.textContent = header;
+                lngSelect.appendChild(opt2);
+
+                const opt3 = document.createElement('option');
+                opt3.value = header;
+                opt3.textContent = header;
+                titleSelect.appendChild(opt3);
+            });
+        }
+
+        // Auto detect latitude, longitude, and title columns from common Korean/English column names
+        function autoDetectColumns() {
+            const latKeywords = ['위도', 'lat', 'latitude', 'y', 'y좌표', 'ycoord'];
+            const lngKeywords = ['경도', 'lng', 'lon', 'longitude', 'x', 'x좌표', 'xcoord'];
+            const titleKeywords = ['발전소명', '명칭', '이름', 'name', 'title', '상호명', '장소명', '시설명', '사업장명'];
+
+            let detectedLat = '';
+            let detectedLng = '';
+            let detectedTitle = '';
+
+            csvHeaders.forEach(header => {
+                const lower = header.toLowerCase().trim();
+                
+                if (!detectedLat && latKeywords.some(k => lower === k || lower.includes(k))) {
+                    detectedLat = header;
+                }
+                if (!detectedLng && lngKeywords.some(k => lower === k || lower.includes(k))) {
+                    detectedLng = header;
+                }
+                if (!detectedTitle && titleKeywords.some(k => lower === k || lower.includes(k))) {
+                    detectedTitle = header;
+                }
+            });
+
+            // Set selects
+            if (detectedLat) document.getElementById('latSelect').value = detectedLat;
+            if (detectedLng) document.getElementById('lngSelect').value = detectedLng;
+            if (detectedTitle) document.getElementById('titleSelect').value = detectedTitle;
+
+            const badge = document.getElementById('detectedBadge');
+            if (detectedLat && detectedLng) {
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        // Render markers on the map and populate side list
+        function renderMarkers() {
+            const latCol = document.getElementById('latSelect').value;
+            const lngCol = document.getElementById('lngSelect').value;
+            const titleCol = document.getElementById('titleSelect').value;
+            const useCluster = document.getElementById('clusterToggle').value === 'true';
+
+            clusterGroup.clearLayers();
+            layerGroup.clearLayers();
+            markersList = [];
+
+            const listContainer = document.getElementById('locationList');
+            listContainer.innerHTML = '';
+
+            if (!latCol || !lngCol) {
+                listContainer.innerHTML = `
+                    <div class="p-6 text-center text-slate-400 text-xs">
+                        <i class="fa-solid fa-hand-pointer text-2xl mb-2 text-sky-400"></i>
+                        <p>상단에서 위도와 경도 컬럼을 선택해주세요.</p>
+                    </div>`;
+                document.getElementById('totalCount').textContent = rawCsvData.length;
+                document.getElementById('validCount').textContent = '0';
+                return;
+            }
+
+            let validCount = 0;
+            let invalidCount = 0;
+            const bounds = [];
+
+            // Custom pin icon HTML
+            const iconHtml = `<div class="custom-pin"><i class="fa-solid fa-solar-panel"></i></div>`;
+            const customIcon = L.divIcon({
+                html: iconHtml,
+                className: '',
+                iconSize: [32, 32],
+                iconAnchor: [16, 32],
+                popupAnchor: [0, -30]
+            });
+
+            rawCsvData.forEach((row, index) => {
+                const rawLat = parseFloat(row[latCol]);
+                const rawLng = parseFloat(row[lngCol]);
+
+                // Validate coordinates range
+                if (isNaN(rawLat) || isNaN(rawLng) || rawLat < -90 || rawLat > 90 || rawLng < -180 || rawLng > 180) {
+                    invalidCount++;
+                    return;
+                }
+
+                validCount++;
+                const point = [rawLat, rawLng];
+                bounds.push(point);
+
+                const itemTitle = (titleCol && row[titleCol]) ? row[titleCol] : `위치 #${index + 1}`;
+
+                // Create Marker instance
+                const marker = L.marker(point, { icon: customIcon });
+
+                // Build rich HTML popup content displaying all attributes
+                let popupHtml = `
+                    <div class="p-2 min-w-[220px] max-w-[280px]">
+                        <h3 class="font-bold text-sky-400 text-sm mb-2 pb-1.5 border-b border-slate-700 flex items-center gap-1.5">
+                            <i class="fa-solid fa-location-dot text-sky-400"></i> ${escapeHtml(itemTitle)}
+                        </h3>
+                        <div class="space-y-1 text-xs text-slate-300 max-h-52 overflow-y-auto pr-1">
+                `;
+
+                Object.keys(row).forEach(key => {
+                    if (row[key] !== undefined && row[key] !== null && row[key] !== '') {
+                        popupHtml += `
+                            <div class="flex justify-between gap-2 py-0.5 border-b border-slate-800/60 text-[11px]">
+                                <span class="text-slate-400 shrink-0 font-medium">${escapeHtml(key)}:</span>
+                                <span class="text-slate-200 text-right truncate" title="${escapeHtml(row[key])}">${escapeHtml(row[key])}</span>
+                            </div>
+                        `;
+                    }
+                });
+
+                popupHtml += `
+                        </div>
+                        <div class="mt-2 text-[10px] text-slate-500 text-right font-mono">
+                            ${rawLat.toFixed(5)}, ${rawLng.toFixed(5)}
+                        </div>
+                    </div>
+                `;
+
+                marker.bindPopup(popupHtml);
+
+                // Store marker metadata
+                markersList.push({
+                    index,
+                    row,
+                    title: itemTitle,
+                    lat: rawLat,
+                    lng: rawLng,
+                    marker
+                });
+
+                if (useCluster) {
+                    clusterGroup.addLayer(marker);
+                } else {
+                    layerGroup.addLayer(marker);
+                }
+
+                // Render Sidebar Card item
+                const card = document.createElement('div');
+                card.className = 'p-3 bg-slate-900/80 hover:bg-slate-700/60 border border-slate-700/70 hover:border-sky-500/50 rounded-xl cursor-pointer transition-all duration-200 text-xs shadow-sm';
+                card.setAttribute('data-index', index);
+
+                card.innerHTML = `
+                    <div class="font-semibold text-slate-200 flex items-center justify-between gap-2 mb-1">
+                        <span class="truncate text-sky-300">${escapeHtml(itemTitle)}</span>
+                        <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-slate-700 font-mono shrink-0">#${index + 1}</span>
+                    </div>
+                    <div class="text-[11px] text-slate-400 flex items-center gap-2">
+                        <span><i class="fa-regular fa-compass text-slate-500"></i> ${rawLat.toFixed(4)}, ${rawLng.toFixed(4)}</span>
+                    </div>
+                `;
+
+                card.addEventListener('click', () => {
+                    map.setView(point, 15, { animate: true });
+                    setTimeout(() => {
+                        marker.openPopup();
+                    }, 300);
+
+                    // On mobile, auto close sidebar when location selected
+                    if (window.innerWidth < 1024) {
+                        document.getElementById('sidebar').classList.add('-translate-x-full');
+                    }
+                });
+
+                listContainer.appendChild(card);
+            });
+
+            if (!useCluster) {
+                map.addLayer(layerGroup);
+            }
+
+            // Update stats
+            document.getElementById('totalCount').textContent = rawCsvData.length;
+            document.getElementById('validCount').textContent = validCount;
+
+            const mapStatusOverlay = document.getElementById('mapStatusOverlay');
+            const invalidBadge = document.getElementById('invalidBadge');
+            
+            mapStatusOverlay.classList.remove('hidden');
+            if (invalidCount > 0) {
+                invalidBadge.classList.remove('hidden');
+                document.getElementById('invalidCount').textContent = invalidCount;
+            } else {
+                invalidBadge.classList.add('hidden');
+            }
+
+            // Auto fit bounds
+            if (bounds.length > 0) {
+                map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+            }
+        }
+
+        // Filter sidebar cards and map markers according to search term
+        function filterListAndMap(searchTerm) {
+            const term = searchTerm.toLowerCase().trim();
+            const listContainer = document.getElementById('locationList');
+
+            let visibleCount = 0;
+
+            markersList.forEach(item => {
+                const matches = Object.values(item.row).some(val => 
+                    String(val).toLowerCase().includes(term)
+                );
+
+                const card = listContainer.querySelector(`[data-index="${item.index}"]`);
+
+                if (matches) {
+                    visibleCount++;
+                    if (card) card.classList.remove('hidden');
+                    if (!map.hasLayer(item.marker) && document.getElementById('clusterToggle').value === 'false') {
+                        layerGroup.addLayer(item.marker);
+                    }
+                } else {
+                    if (card) card.classList.add('hidden');
+                    if (document.getElementById('clusterToggle').value === 'false') {
+                        layerGroup.removeLayer(item.marker);
+                    }
+                }
+            });
+
+            document.getElementById('validCount').textContent = visibleCount;
+        }
+
+        // Helper toast popup
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toastMessage');
+            const toastIcon = document.getElementById('toastIcon');
+
+            toastMsg.textContent = message;
+
+            if (type === 'error') {
+                toastIcon.className = 'fa-solid fa-circle-exclamation text-rose-400 text-base';
+            } else if (type === 'success') {
+                toastIcon.className = 'fa-solid fa-circle-check text-emerald-400 text-base';
+            } else {
+                toastIcon.className = 'fa-solid fa-circle-info text-sky-400 text-base';
+            }
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        // HTML escaping utility
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
